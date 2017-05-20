@@ -131,6 +131,15 @@ for (i in 2:25) wss[i] <- sum(kmeans(ALL,algorithm = "Lloyd", centers=i)$withins
 plot(1:25, wss, type="b", xlab="Number of Clusters",
      ylab="Within groups sum of squares") 
 
+## Prompt the user to provide a desired number of clusters to break the data into
+##
+## Code needs to be sourced for this to work
+##
+## k<-as.numeric(readline("How many clusters?"))
+
+## Define the number of clusters to be used in the analysis
+k<-6
+
 ##K-means clustering
 set.seed(1L)  
 ALL_cluster <- kmeans(ALL,k,algorithm = "Lloyd", nstart = 1000)
