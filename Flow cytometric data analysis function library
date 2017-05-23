@@ -65,12 +65,11 @@ get.FCS<-function(fileName, filePath) {
 }
 
 
-##
 ## Function to read in parameter labels as a tab delimited file from the working directory
 ## Returns a data frame containing label information
 ## Table format (use these as column headers with identical casing and spelling) --
-## Column 1: Fluorophore
-## Column 2: Marker
+## Column 1: "Fluorophore"
+## Column 2: "Marker"
 ##
 ## The parameter labels themselves require no specific order/punctuation/casing for fluorophores or markers,
 ## but the fluorophore names should match those applied to the FCS files being worked with
@@ -89,7 +88,6 @@ get.ParameterLabels<-function(parameterLabelsFileName) {
   
 }
 
-##
 ## Function to replace fluorophore labels in a flow data frame with marker labels,
 ## using a provided parameter label table read in by the get.ParameterLabels() function
 ##
