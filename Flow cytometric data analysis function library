@@ -1,0 +1,168 @@
+library(flowCore)
+library(flowClust)
+library(flowTrans)
+
+
+setwd("C:/Users/Sean/Actual documents/School Work/Graduate/R")
+
+## Generic function for pulling in FCS files and returning a list of flow data frames
+## Default behavior: Imports all FCS files found in the working directory
+## Optional arguments:
+## File name - Will only import a single file that matches the provided string
+## File path - Will import files from the file path designated by the provided string
+##
+get.FCS<-function(fileName, filePath) {
+  
+  flowFrameList<-list()
+  
+  if(missing(filePath) == TRUE){
+    if (missing(fileName) == TRUE) {
+      fileNames<-list.files(pattern = ".fcs$", ignore.case = TRUE)
+    }
+    else {
+      fileNames<-list.files(pattern = fileName)
+      if (length(fileNames) == 0L) {
+        stop(paste("File name not found in", getwd()))
+      }
+    }
+    
+    for (i in 1:length(fileNames)) {
+      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
+      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+    }
+  }
+  
+  else {
+    if (missing(fileName) == TRUE) {
+      fileNames<-list.files(path = filePath, pattern = ".fcs$", ignore.case = TRUE)
+      if (length(fileNames) == 0L) {
+        stop(paste("File name not found in", filePath))
+      }
+    }
+    else {
+      fileNames<-list.files(path = filePath, pattern = fileName)
+      if (length(fileNames) == 0L) {
+        stop("File name not found, or unable to path correctly")
+      }
+    }
+    
+    currentWD<-getwd()
+    setwd(filePath)
+    if (getwd() == currentWD) {
+      stop("Unable to path correctly")
+    }
+    
+    for (i in 1:length(fileNames)) {
+      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
+      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+    }
+    
+    setwd(currentWD)
+  }
+  
+  return(flowFrameList)
+  
+}
+
+
+## Function to read in parameter labels as a tab delimited file from the working directory
+## Returns a data frame containing label information
+## Table format (use these as column headers with identical casing and spelling) --
+## Column 1: "Fluorophore"
+## Column 2: "Marker"
+##
+## The parameter labels themselves require no specific order/punctuation/casing for fluorophores or markers,
+## but the fluorophore names should match those applied to the FCS files being worked with
+##
+get.ParameterLabels<-function(parameterLabelsFileName) {
+  
+  parameterLabels<-as.data.frame(read.table(parameterLabelsFileName, header = TRUE, stringsAsFactors = FALSE))
+  
+  ## Remove punctuation from parameter labels and convert to uppercase
+  for (i in 1:nrow(parameterLabels)) {
+    parameterLabels$Fluorophore[i]<-gsub("[^[:alnum:]]", "", as.character(parameterLabels$Fluorophore[i]))
+    parameterLabels$Fluorophore[i]<-toupper(parameterLabels$Fluorophore[i])
+  }
+  
+  return(parameterLabels)
+  
+}
+
+## Function to replace fluorophore labels in a flow data frame with marker labels,
+## using a provided parameter label table read in by the get.ParameterLabels() function
+##
+## Optional arguments: keepFluoro -- (boolean, default = FALSE) 
+## sepChar -- subargument of keepFluoro (string, default = "-")
+## If keepFluoro is TRUE, appends the marker label to the fluoroscence label, seperated
+## by the character specificed in the sepChar argument
+flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels, keepFluoro = FALSE, sepChar = "-") {
+  
+  if (missing(parameterLabels) == TRUE) {
+    stop("No parameter label argument provided")
+  }
+  
+  if (is.null(parameterLabels) == TRUE) {
+    stop("Parameter label is null")
+  }
+  
+  if (is.null(flowDataFrame) == TRUE) {
+    stop("Flow data frame is null")
+  }
+  
+  ## For each column in data frame containing flow data:
+  for(i in 1:ncol(flowDataFrame)) {
+    
+    ## Read column name
+    flow_column_name<-colnames(flowDataFrame[i])  
+    
+    ## If column name = FSC-A, SSC-A, or Time, skip it
+    if(flow_column_name == "FSC-A" | flow_column_name == "SSC-A" | flow_column_name == "Time") {
+      next()
+    }
+    
+    ## Else, chop unecessary bits off the parameter name and convert to uppercase
+    else {
+      
+      flow_column_name<-sub("<","",flow_column_name)
+      flow_column_name<-sub("-A>","",flow_column_name)
+      flow_column_name<-gsub("[^[:alnum:]]", "", flow_column_name)
+      flow_column_name<-toupper(flow_column_name)
+      
+      ## Iteratively compare the column name to the fluorescence parameters in the 
+      ## provided label file
+      ##
+      ## If matched, rename the column of the flow data frame to marker label
+      
+      Switch<-FALSE
+      
+      for(n in 1:length(parameterLabels$Fluorophore)){
+        
+        if(flow_column_name == parameterLabels$Fluorophore[n]) {
+          
+          if(keepFluoro == FALSE) {
+            colnames(flowDataFrame)[i]<-as.character(parameterLabels$Marker[n])
+            Switch<-TRUE
+          }
+          
+          if(keepFluoro == TRUE){
+            if(sepChar == "-") {
+              colnames(flowDataFrame)[i]<-paste(as.character(parameterLabels$Marker[n]), flow_column_name, sep = "-")
+              Switch<-TRUE
+            }
+            else {
+              colnames(flowDataFrame)[i]<-paste(as.character(parameterLabels$Marker[n]), flow_column_name, sep = sepChar)
+              Switch<-TRUE
+            }
+          }
+        }
+      }
+      
+      if(Switch == FALSE) {
+        stop(paste("Could not assign", flow_column_name, "to a marker, check parameter table"))
+      }
+      
+    } 
+    
+  }
+  return(flowDataFrame)
+}
