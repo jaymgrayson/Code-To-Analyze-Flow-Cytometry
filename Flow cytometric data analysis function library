@@ -40,12 +40,12 @@ get.FCS<-function(fileName, filePath) {
       }
     }
     else {
-       fileNames<-list.files(path = filePath, pattern = fileName)
-       if (length(fileNames) == 0L) {
-         stop("File name not found, or unable to path correctly")
-       }
+      fileNames<-list.files(path = filePath, pattern = fileName)
+      if (length(fileNames) == 0L) {
+        stop("File name not found, or unable to path correctly")
+      }
     }
-      
+    
     currentWD<-getwd()
     setwd(filePath)
     if (getwd() == currentWD) {
@@ -56,7 +56,7 @@ get.FCS<-function(fileName, filePath) {
       flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
       flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
     }
-      
+    
     setwd(currentWD)
   }
   
@@ -91,7 +91,11 @@ get.ParameterLabels<-function(parameterLabelsFileName) {
 ## Function to replace fluorophore labels in a flow data frame with marker labels,
 ## using a provided parameter label table read in by the get.ParameterLabels() function
 ##
-flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels) {
+## Optional arguments: keepFluoro -- (boolean, default = FALSE) 
+## sepChar -- subargument of keepFluoro (string, default = "-")
+## If keepFluoro is TRUE, appends the marker label to the fluoroscence label, seperated
+## by the character specificed in the sepChar argument
+flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels, keepFluoro = FALSE, sepChar = "-") {
   
   if (missing(parameterLabels) == TRUE) {
     stop("No parameter label argument provided")
@@ -134,8 +138,22 @@ flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels) {
       for(n in 1:length(parameterLabels$Fluorophore)){
         
         if(flow_column_name == parameterLabels$Fluorophore[n]) {
-          colnames(flowDataFrame)[i]<-as.character(parameterLabels$Marker[n])
-          Switch<-TRUE
+          
+          if(keepFluoro == FALSE) {
+            colnames(flowDataFrame)[i]<-as.character(parameterLabels$Marker[n])
+            Switch<-TRUE
+          }
+          
+          if(keepFluoro == TRUE){
+            if(sepChar == "-") {
+              colnames(flowDataFrame)[i]<-paste(as.character(parameterLabels$Marker[n]), flow_column_name, sep = "-")
+              Switch<-TRUE
+            }
+            else {
+              colnames(flowDataFrame)[i]<-paste(as.character(parameterLabels$Marker[n]), flow_column_name, sep = sepChar)
+              Switch<-TRUE
+            }
+          }
         }
       }
       
