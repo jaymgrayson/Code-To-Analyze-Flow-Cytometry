@@ -2,8 +2,71 @@ library(flowCore)
 library(flowClust)
 library(flowTrans)
 
+
+setwd("C:/Users/Sean/Actual documents/School Work/Graduate/R")
+
+## Generic function for pulling in FCS files and returning a list of flow data frames
+## Default behavior: Imports all FCS files found in the working directory
+## Optional arguments:
+## File name - Will only import a single file that matches the provided string
+## File path - Will import files from the file path designated by the provided string
 ##
-## Function to read in a parameter label table from the working directory
+get.FCS<-function(fileName, filePath) {
+  
+  flowFrameList<-list()
+  
+  if(missing(filePath) == TRUE){
+    if (missing(fileName) == TRUE) {
+      fileNames<-list.files(pattern = ".fcs$", ignore.case = TRUE)
+    }
+    else {
+      fileNames<-list.files(pattern = fileName)
+      if (length(fileNames) == 0L) {
+        stop(paste("File name not found in", getwd()))
+      }
+    }
+    
+    for (i in 1:length(fileNames)) {
+      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
+      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+    }
+  }
+  
+  else {
+    if (missing(fileName) == TRUE) {
+      fileNames<-list.files(path = filePath, pattern = ".fcs$", ignore.case = TRUE)
+      if (length(fileNames) == 0L) {
+        stop(paste("File name not found in", filePath))
+      }
+    }
+    else {
+       fileNames<-list.files(path = filePath, pattern = fileName)
+       if (length(fileNames) == 0L) {
+         stop("File name not found, or unable to path correctly")
+       }
+    }
+      
+    currentWD<-getwd()
+    setwd(filePath)
+    if (getwd() == currentWD) {
+      stop("Unable to path correctly")
+    }
+    
+    for (i in 1:length(fileNames)) {
+      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
+      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+    }
+      
+    setwd(currentWD)
+  }
+  
+  return(flowFrameList)
+  
+}
+
+
+##
+## Function to read in parameter labels as a tab delimited file from the working directory
 ## Returns a data frame containing label information
 ## Table format (use these as column headers with identical casing and spelling) --
 ## Column 1: Fluorophore
@@ -12,7 +75,7 @@ library(flowTrans)
 ## The parameter labels themselves require no specific order/punctuation/casing for fluorophores or markers,
 ## but the fluorophore names should match those applied to the FCS files being worked with
 ##
-get_parameter_labels<-function(parameterLabelsFileName) {
+get.ParameterLabels<-function(parameterLabelsFileName) {
   
   parameterLabels<-as.data.frame(read.table(parameterLabelsFileName, header = TRUE, stringsAsFactors = FALSE))
   
@@ -21,16 +84,16 @@ get_parameter_labels<-function(parameterLabelsFileName) {
     parameterLabels$Fluorophore[i]<-gsub("[^[:alnum:]]", "", as.character(parameterLabels$Fluorophore[i]))
     parameterLabels$Fluorophore[i]<-toupper(parameterLabels$Fluorophore[i])
   }
-
+  
   return(parameterLabels)
   
 }
 
 ##
 ## Function to replace fluorophore labels in a flow data frame with marker labels,
-## using a provided parameter label table read in by the get_parameter_labels() function
+## using a provided parameter label table read in by the get.ParameterLabels() function
 ##
-flow_Frame_Marker_Apply<- function(flowDataFrame, parameterLabels) {
+flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels) {
   
   if (missing(parameterLabels) == TRUE) {
     stop("No parameter label argument provided")
@@ -87,4 +150,3 @@ flow_Frame_Marker_Apply<- function(flowDataFrame, parameterLabels) {
   }
   return(flowDataFrame)
 }
- 
