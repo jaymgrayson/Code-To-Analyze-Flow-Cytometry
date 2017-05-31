@@ -3,14 +3,11 @@ library(flowClust)
 library(flowTrans)
 
 
-setwd("C:/Users/Sean/Actual documents/School Work/Graduate/R")
-
 ## Generic function for pulling in FCS files and returning a list of flow data frames
 ## Default behavior: Imports all FCS files found in the working directory
 ## Optional arguments:
 ## File name - Will only import a single file that matches the provided string
 ## File path - Will import files from the file path designated by the provided string
-##
 get.FCS<-function(fileName, filePath) {
   
   flowFrameList<-list()
@@ -64,7 +61,6 @@ get.FCS<-function(fileName, filePath) {
   
 }
 
-
 ## Function to read in parameter labels as a tab delimited file from the working directory
 ## Returns a data frame containing label information
 ## Table format (use these as column headers with identical casing and spelling) --
@@ -73,7 +69,6 @@ get.FCS<-function(fileName, filePath) {
 ##
 ## The parameter labels themselves require no specific order/punctuation/casing for fluorophores or markers,
 ## but the fluorophore names should match those applied to the FCS files being worked with
-##
 get.ParameterLabels<-function(parameterLabelsFileName) {
   
   parameterLabels<-as.data.frame(read.table(parameterLabelsFileName, header = TRUE, stringsAsFactors = FALSE))
@@ -163,6 +158,103 @@ flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels, keepFluoro = FA
       
     } 
     
+  }
+  return(flowDataFrame)
+}
+
+## Function to remove columns or specific elements that meet a condition from a flow frame
+## Arguments:
+## flowDataFrame - Data frame containing flow data to be manipulated
+## parameter - String matching a column label of the flow frame
+##
+## Optional arguments:
+## upper/lowerBound - Numeric(s) defining an allowed range of values for elements in flowDataFrame$parameter
+## If a value falls outside this range, the entire row (cell) is removed from the flow frame
+flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBound = NULL) {
+  
+  parameter<-toupper(parameter)
+  
+  ## Iterate through the column names of the passed flow frame, looking for "parameter"
+  Switch<-FALSE
+  colNum<-ncol(flowDataFrame)
+  columnNames<-toupper(colnames(flowDataFrame))
+  
+  for(colI in 1:colNum) {
+    
+    ## If a match is found
+    if (columnNames[colI] == parameter) {
+      
+      Switch<-TRUE
+
+      ## and if no upper/lower bound arguments were supplied
+      if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
+
+        ## remove that column 
+        flowDataFrame<-flowDataFrame[-colI]
+        break()
+      }
+      
+      else {
+
+        rowCount<-nrow(flowDataFrame[colI])
+        colValues<-as.vector(flowDataFrame[,colI])
+        rowIndexVector<-NULL
+        
+        ## If an upperbound and lowerbound argument were passed
+        if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
+          
+          cond<-c(colValues > upperBound | colValues < lowerBound)
+
+          ## For each element in that column of the flow frame
+          for(rowI in 1:rowCount){
+            
+            ## if the element value is above the upper or below the lower bounds, 
+            ## add the row index of that value (cell) to a vector
+            if(cond[rowI]){
+              rowIndexVector<-c(rowIndexVector, rowI)
+            }
+          }
+          
+          ## Remove the cells matching the row indices from the flow frame
+          flowDataFrame<-flowDataFrame[-rowIndexVector,]
+
+          ## If the previous block of code executed, no need to run the remaining
+          break()
+        }
+        
+        else {
+
+          if(is.null(upperBound) == FALSE) {
+              
+              cond<-c(colValues > upperBound)
+              
+              for(rowI in 1:rowCount){
+                if(cond[rowI]){
+                  rowIndexVector<-c(rowIndexVector, rowI)
+                }
+              }
+              flowDataFrame<-flowDataFrame[-rowIndexVector,]
+              break()
+            }
+
+          if(is.null(lowerBound) == FALSE) {
+            
+            cond<-c(colValues < lowerBound)
+            
+            for(rowI in 1:rowCount){
+              if(cond[rowI]){
+                rowIndexVector<-c(rowIndexVector, rowI)
+              }
+            }
+            flowDataFrame<-flowDataFrame[-rowIndexVector,]
+            break()
+          }
+        }
+      }
+    }
+  }
+  if (Switch == FALSE) {
+    stop(paste(as.character(parameter), "parameter not found"))
   }
   return(flowDataFrame)
 }
