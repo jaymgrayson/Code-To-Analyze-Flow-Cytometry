@@ -2,7 +2,6 @@ library(flowCore)
 library(flowClust)
 library(flowTrans)
 
-
 ## Generic function for pulling in FCS files and returning a list of flow data frames
 ## Default behavior: Imports all FCS files found in the working directory
 ## Optional arguments:
@@ -55,6 +54,27 @@ get.FCS<-function(fileName, filePath) {
     }
     
     setwd(currentWD)
+  }
+  
+  ## Loop to parse column names of all imported FCS files to a standardized,
+  ## no punctuation format
+  for(i in 1:length(flowFrameList)) {
+    
+    colNum<-ncol(flowFrameList[[i]])
+    
+    for (k in 1:colNum) {
+      
+      flowColumnName<-colnames(flowFrameList[[i]][k])
+      
+      flowColumnName<-sub("^<","",flowColumnName)
+      flowColumnName<-sub("-(A|A>)","",flowColumnName)
+      flowColumnName<-gsub("[^[:alnum:]]", "", flowColumnName)
+      flowColumnName<-toupper(flowColumnName)
+      print(flowColumnName)
+      colnames(flowFrameList[[i]])[k]<-flowColumnName
+      
+    }
+    
   }
   
   return(flowFrameList)
@@ -115,13 +135,7 @@ flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels, keepFluoro = FA
       next()
     }
     
-    ## Else, chop unecessary bits off the parameter name and convert to uppercase
     else {
-      
-      flow_column_name<-sub("<","",flow_column_name)
-      flow_column_name<-sub("-A>","",flow_column_name)
-      flow_column_name<-gsub("[^[:alnum:]]", "", flow_column_name)
-      flow_column_name<-toupper(flow_column_name)
       
       ## Iteratively compare the column name to the fluorescence parameters in the 
       ## provided label file
