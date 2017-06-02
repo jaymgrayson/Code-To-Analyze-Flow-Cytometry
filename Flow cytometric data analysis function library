@@ -130,8 +130,8 @@ flowFrame.MarkerApply<- function(flowDataFrame, parameterLabels, keepFluoro = FA
     ## Read column name
     flow_column_name<-colnames(flowDataFrame[i])  
     
-    ## If column name = FSC-A, SSC-A, or Time, skip it
-    if(flow_column_name == "FSC-A" | flow_column_name == "SSC-A" | flow_column_name == "Time") {
+    ## If column name = FSC, SSC, or Time, skip it
+    if(flow_column_name == "FSC" | flow_column_name == "SSC" | flow_column_name == "Time") {
       next()
     }
     
