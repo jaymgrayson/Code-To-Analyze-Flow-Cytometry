@@ -258,3 +258,15 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
   }
   return(flowDataFrame)
 }
+
+## Simple function applying flowFrame.Prune to all elements of a list of flow data frames
+## Same arguments as flowFrame.Prune
+flowList.Prune<-function(flowList, parameter, upperBound = NULL, lowerBound = NULL) {
+  
+  for(i in 1:length(flowList)) {
+    flowList[[i]]<-flowFrame.Prune(flowList[[i]], parameter, upperBound, lowerBound)
+  }
+  
+  return(flowList)
+  
+}
