@@ -237,7 +237,7 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
           Lower<-paramInfo$LOWERBOUND[i]
           
           ## Until a label match is found
-          if (fluoroLabel == colnames(flowDataFrame[k]) | (!is.na(markerLabel) & markerLabel == colnames(flowDataFrame[k]))){
+          if (fluoroLabel == colnames(flowDataFrame[k]) | (!is.na(markerLabel) & markerLabel == colnames(flowDataFrame[k])) | (!is.na(markerLabel) & paste(markerLabel,"-",fluoroLabel, sep = "") == colnames(flowDataFrame[k]))){
             Switch<-TRUE
             
             rowCount<-nrow(flowDataFrame[k])
