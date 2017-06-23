@@ -103,18 +103,21 @@ get.FCS<-function(fileName, filePath) {
 get.Parameters<-function(parameterTableFileName) {
   
   parameters<-as.data.frame(read.table(parameterTableFileName, header = TRUE, stringsAsFactors = FALSE, na.strings = "NA", fill = TRUE))
-  
-  # Remove punctuation from parameter labels and convert to uppercase
-  for (i in 1:nrow(parameters)) {
-    parameters$Fluorophore[i]<-gsub("[^[:alnum:]]", "", as.character(parameters$Fluorophore[i]))
-    parameters$Fluorophore[i]<-toupper(parameters$Fluorophore[i])
-  }
-
-  # Parse all column titles to standardized format
+ 
+   # Parse all column titles to standardized format
   for (i in 1:ncol(parameters)) {
     colnames(parameters)[i]<-gsub("[^[:alnum:]]", "", colnames(parameters)[i])
     colnames(parameters)[i]<-toupper(colnames(parameters)[i])
   }
+  
+  # Remove punctuation from parameter labels and convert to uppercase
+  for (i in 1:nrow(parameters)) {
+    parameters$FLUOROPHORE[i]<-gsub("[^[:alnum:]]", "", as.character(parameters$FLUOROPHORE[i]))
+    parameters$FLUOROPHORE[i]<-toupper(parameters$FLUOROPHORE[i])
+    parameters$MARKER[i]<-gsub("[^[:alnum:]]", "", as.character(parameters$MARKER[i]))
+    parameters$MARKER[i]<-toupper(parameters$MARKER[i])
+  }
+
   
   assign("paramInfo", parameters, envir = globalenv())
 }
@@ -160,22 +163,22 @@ flowFrame.MarkerApply<- function(flowDataFrame, keepFluoro = FALSE, sepChar = "-
       
       Switch<-FALSE
       
-      for(n in 1:length(paramInfo$Fluorophore)){
+      for(n in 1:length(paramInfo$FLUOROPHORE)){
         
-        if(flow_column_name == paramInfo$Fluorophore[n]) {
-          
+        if(flow_column_name == paramInfo$FLUOROPHORE[n]) {
+
           if(keepFluoro == FALSE) {
-            colnames(flowDataFrame)[i]<-as.character(paramInfo$Marker[n])
+            colnames(flowDataFrame)[i]<-as.character(paramInfo$MARKER[n])
             Switch<-TRUE
           }
           
           if(keepFluoro == TRUE){
             if(sepChar == "-") {
-              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$Marker[n]), flow_column_name, sep = "-")
+              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = "-")
               Switch<-TRUE
             }
             else {
-              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$Marker[n]), flow_column_name, sep = sepChar)
+              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = sepChar)
               Switch<-TRUE
             }
           }
@@ -211,7 +214,7 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
   ## AND it has either an upperbound or lowerbound column..
     if (fromTable) {
       if(!exists("paramInfo")) {
-      stop("Parameter table not found-- call get.ParameterLabels()")
+      stop("Parameter table not found-- call get.Parameters()")
       }
       if(is.null(paramInfo)) {
       stop("Parameter table is null")
@@ -227,12 +230,14 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
         
         ## Iterate through each column of the flow data frame..
         for (k in 1:ncol(flowDataFrame)) {
+          
           fluoroLabel<-paramInfo$FLUOROPHORE[i]
+          markerLabel<-paramInfo$MARKER[i]
           Upper<-paramInfo$UPPERBOUND[i]
           Lower<-paramInfo$LOWERBOUND[i]
           
           ## Until a label match is found
-          if (fluoroLabel == colnames(flowDataFrame[k])){
+          if (fluoroLabel == colnames(flowDataFrame[k]) | (!is.na(markerLabel) & markerLabel == colnames(flowDataFrame[k]))){
             Switch<-TRUE
             
             rowCount<-nrow(flowDataFrame[k])
@@ -241,7 +246,6 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
             
             ## If 0,0 for upper/lower bound, delete column
             if(!is.na(Upper) & !is.na(Lower) & Upper == 0 & Lower == 0) {
-              print(paste("Deleting",fluoroLabel))
               flowDataFrame<-flowDataFrame[-k]
               break()
             }
@@ -303,7 +307,12 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
           }
         }
         if (Switch == FALSE) {
-          warning(paste("Unable to find",paramInfo$FLUOROPHORE[i],"in flow frame"))
+          if (!is.na(paramInfo$MARKER[i])){
+            warning(paste("Unable to find",paramInfo$MARKER[i],"or",paramInfo$FLUOROPHORE[i],"in flow frame"))
+          }
+          else {
+            warning(paste("Unable to find",paramInfo$FLUOROPHORE[i],"in flow frame"))
+          }
         }
       }
     return(flowDataFrame)
