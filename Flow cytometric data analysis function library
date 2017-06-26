@@ -124,82 +124,96 @@ get.Parameters<-function(parameterTableFileName) {
   assign("paramInfo", parameters, envir = globalenv())
 }
 
-## Function to replace fluorophore labels in a flow data frame with marker labels,
-## using a provided parameter label table read in by the get.ParameterLabels() function
+## Function to replace fluorophore labels in a flow object with marker labels,
+## using a provided parameter table read in by the get.Parameters() function
 ##
 ## Optional arguments: keepFluoro -- (boolean, default = FALSE) 
 ## sepChar -- subargument of keepFluoro (string, default = "-")
 ## If keepFluoro is TRUE, appends the marker label to the fluoroscence label, seperated
 ## by the character specificed in the sepChar argument
-flowFrame.MarkerApply<- function(flowDataFrame, keepFluoro = FALSE, sepChar = "-") {
-  
-  if (exists("paramInfo") == FALSE) {
-    stop("No parameter label matrix found")
-  }
-  
-  if (is.null(paramInfo) == TRUE) {
-    stop("Parameter label matrix is null")
-  }
-  
-  if (is.null(flowDataFrame) == TRUE) {
-    stop("Flow data frame is null")
-  }
-  
-  ## For each column in data frame containing flow data:
-  for(i in 1:ncol(flowDataFrame)) {
-    
-    ## Read column name
-    flow_column_name<-colnames(flowDataFrame[i])  
-    
-    ## If column name = FSC-A, SSC-A, or Time, skip it
-    if(flow_column_name == "FSC" | flow_column_name == "SSC" | flow_column_name == "TIME") {
-      next()
+flow.MarkerApply<- function(flowDataFrameOrList, keepFluoro = FALSE, sepChar = "-") {
+  flowFrame.MarkerApply<- function(flowDataFrame = flowDataFrameOrList, keepFluoro, sepChar) {
+    if (exists("paramInfo") == FALSE) {
+      stop("No parameter table found")
     }
     
-    else {
+    if (is.null(paramInfo) == TRUE) {
+      stop("Parameter table is null")
+    }
+    
+    if (is.null(flowDataFrame) == TRUE) {
+      stop("Flow object is null")
+    }
+    
+    ## For each column in data frame containing flow data:
+    for(i in 1:ncol(flowDataFrame)) {
       
-      ## Iteratively compare the column name to the fluorescence parameters in the 
-      ## provided label file
-      ##
-      ## If matched, rename the column of the flow data frame to marker label
+      ## Read column name
+      flow_column_name<-colnames(flowDataFrame[i])  
       
-      Switch<-FALSE
+      ## If column name = FSC, SSC, or Time, skip it
+      if(flow_column_name == "FSC" | flow_column_name == "SSC" | flow_column_name == "TIME") {
+        next()
+      }
       
-      for(n in 1:length(paramInfo$FLUOROPHORE)){
+      else {
         
-        if(flow_column_name == paramInfo$FLUOROPHORE[n]) {
-
-          if(keepFluoro == FALSE) {
-            colnames(flowDataFrame)[i]<-as.character(paramInfo$MARKER[n])
-            Switch<-TRUE
-          }
+        ## Iteratively compare the column name to the fluorescence parameters in the 
+        ## provided label file
+        ##
+        ## If matched, rename the column of the flow data frame to marker label
+        
+        Switch<-FALSE
+        
+        for(n in 1:length(paramInfo$FLUOROPHORE)){
           
-          if(keepFluoro == TRUE){
-            if(sepChar == "-") {
-              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = "-")
+          if(flow_column_name == paramInfo$FLUOROPHORE[n]) {
+  
+            if(keepFluoro == FALSE) {
+              colnames(flowDataFrame)[i]<-as.character(paramInfo$MARKER[n])
               Switch<-TRUE
             }
-            else {
-              colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = sepChar)
-              Switch<-TRUE
+            
+            if(keepFluoro == TRUE){
+              if(sepChar == "-") {
+                colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = "-")
+                Switch<-TRUE
+              }
+              else {
+                colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = sepChar)
+                Switch<-TRUE
+              }
             }
           }
         }
-      }
+        
+        if(Switch == FALSE) {
+          warning(paste("Unable to assign", flow_column_name, "to a marker, check parameter table"))
+        }
+        
+      } 
       
-      if(Switch == FALSE) {
-        warning(paste("Unable to assign", flow_column_name, "to a marker, check parameter table"))
-      }
-      
-    } 
-    
+    }
+    return(flowDataFrame)
   }
-  return(flowDataFrame)
+  
+  if(class(flowDataFrameOrList) == "data.frame") {
+    return(flowFrame.MarkerApply(flowDataFrameOrList, keepFluoro, sepChar))
+  }
+  
+  if(class(flowDataFrameOrList) == "list") {
+    flowList<-as.list(NULL)
+    for(i in 1:length(flowDataFrameOrList)) {
+      flowList[[i]]<-flowFrame.MarkerApply(flowDataFrameOrList[[i]], keepFluoro, sepChar)
+      names(flowList)[[i]]<-names(flowDataFrameOrList)[[i]]
+    }
+    return(flowList)
+  }
 }
 
-## Function to remove columns or specific elements that meet a condition from a flow frame
+## Function to remove columns or specific elements that meet a condition from a flow object
 ## Arguments:
-## flowDataFrame - Data frame containing flow data to be manipulated
+## flowDataFrameOrList - Data frame or list of data frames containing flow data to be manipulated
 ## parameter - String matching a column label of the flow frame
 ##
 ## Optional arguments:
@@ -210,8 +224,12 @@ flowFrame.MarkerApply<- function(flowDataFrame, keepFluoro = FALSE, sepChar = "-
 ## for upper/lower bound arguments. If true, ignores provided parameter, upperBound, and lowerBound
 ## arguments (all the logic is in the table)
 ## This optional argument will not work without first calling the get.Parameters() function
-flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBound = NULL, fromTable = FALSE) {
+flow.Prune<-function(flowDataFrameOrList, parameter, upperBound = NULL, lowerBound = NULL, fromTable = FALSE) {
   
+  ## flowFrame.Prune() is defined here so it can be called by flow.Prune() in a way that makes sense given
+  ## the data type the function is passed
+  flowFrame.Prune<-function(flowDataFrame = flowDataFrameOrList, parameter, upperBound, lowerBound, fromTable) {
+    
   ## If fromTable argument is true, the parameter label matrix exists, it's not null, 
   ## AND it has either an upperbound or lowerbound column..
     if (fromTable) {
@@ -320,61 +338,76 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
     return(flowDataFrame)
   }
   
-  parameter<-toupper(parameter)
+    parameter<-toupper(parameter)
   
-  ## Iterate through the column names of the passed flow frame, looking for "parameter"
-  Switch<-FALSE
-  colNum<-ncol(flowDataFrame)
-  columnNames<-toupper(colnames(flowDataFrame))
-  
-  for(colI in 1:colNum) {
+    ## Iterate through the column names of the passed flow frame, looking for "parameter"
+    Switch<-FALSE
+    colNum<-ncol(flowDataFrame)
+    columnNames<-toupper(colnames(flowDataFrame))
     
-    ## If a match is found
-    if (columnNames[colI] == parameter) {
+    for(colI in 1:colNum) {
       
-      Switch<-TRUE
-
-      ## and if no upper/lower bound arguments were supplied
-      if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
-
-        ## remove that column 
-        flowDataFrame<-flowDataFrame[-colI]
-        break()
-      }
-      
-      else {
-
-        rowCount<-nrow(flowDataFrame[colI])
-        colValues<-as.vector(flowDataFrame[,colI])
-        rowIndexVector<-NULL
+      ## If a match is found
+      if (columnNames[colI] == parameter) {
         
-        ## If an upperbound and lowerbound argument were passed
-        if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
-          
-          cond<-c(colValues > upperBound | colValues < lowerBound)
-
-          ## For each element in that column of the flow frame
-          for(rowI in 1:rowCount){
-            
-            ## if the element value is above the upper or below the lower bounds, 
-            ## add the row index of that value (cell) to a vector
-            if(cond[rowI]){
-              rowIndexVector<-c(rowIndexVector, rowI)
-            }
-          }
-          
-          ## Remove the cells matching the row indices from the flow frame
-          if(!is.null(rowIndexVector)) {
-            flowDataFrame<-flowDataFrame[-rowIndexVector,]
-            break()
-          }
+        Switch<-TRUE
+  
+        ## and if no upper/lower bound arguments were supplied
+        if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
+  
+          ## remove that column 
+          flowDataFrame<-flowDataFrame[-colI]
+          break()
         }
         
         else {
-
-          if(is.null(upperBound) == FALSE) {
+  
+          rowCount<-nrow(flowDataFrame[colI])
+          colValues<-as.vector(flowDataFrame[,colI])
+          rowIndexVector<-NULL
+          
+          ## If an upperbound and lowerbound argument were passed
+          if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
+            
+            cond<-c(colValues > upperBound | colValues < lowerBound)
+  
+            ## For each element in that column of the flow frame
+            for(rowI in 1:rowCount){
               
-              cond<-c(colValues > upperBound)
+              ## if the element value is above the upper or below the lower bounds, 
+              ## add the row index of that value (cell) to a vector
+              if(cond[rowI]){
+                rowIndexVector<-c(rowIndexVector, rowI)
+              }
+            }
+            
+            ## Remove the cells matching the row indices from the flow frame
+            if(!is.null(rowIndexVector)) {
+              flowDataFrame<-flowDataFrame[-rowIndexVector,]
+              break()
+            }
+          }
+          
+          else {
+  
+            if(is.null(upperBound) == FALSE) {
+                
+                cond<-c(colValues > upperBound)
+                
+                for(rowI in 1:rowCount){
+                  if(cond[rowI]){
+                    rowIndexVector<-c(rowIndexVector, rowI)
+                  }
+                }
+                if(!is.null(rowIndexVector)) {
+                  flowDataFrame<-flowDataFrame[-rowIndexVector,]
+                  break()
+                }
+              }
+  
+            if(is.null(lowerBound) == FALSE) {
+              
+              cond<-c(colValues < lowerBound)
               
               for(rowI in 1:rowCount){
                 if(cond[rowI]){
@@ -386,39 +419,27 @@ flowFrame.Prune<-function(flowDataFrame, parameter, upperBound = NULL, lowerBoun
                 break()
               }
             }
-
-          if(is.null(lowerBound) == FALSE) {
-            
-            cond<-c(colValues < lowerBound)
-            
-            for(rowI in 1:rowCount){
-              if(cond[rowI]){
-                rowIndexVector<-c(rowIndexVector, rowI)
-              }
-            }
-            if(!is.null(rowIndexVector)) {
-              flowDataFrame<-flowDataFrame[-rowIndexVector,]
-              break()
-            }
           }
         }
       }
     }
-  }
-  if (Switch == FALSE) {
-    stop(paste(as.character(parameter), "parameter not found"))
-  }
-  return(flowDataFrame)
-}
-
-## Simple function applying flowFrame.Prune to all elements of a list of flow data frames
-## Same arguments as flowFrame.Prune
-flowList.Prune<-function(flowList, parameter, upperBound = NULL, lowerBound = NULL, fromTable = FALSE) {
-  
-  for(i in 1:length(flowList)) {
-    flowList[[i]]<-flowFrame.Prune(flowList[[i]], parameter, upperBound, lowerBound, fromTable)
+    if (Switch == FALSE) {
+      stop(paste(as.character(parameter), "parameter not found"))
+    }
+    return(flowDataFrame)
   }
   
-  return(flowList)
+  if(class(flowDataFrameOrList) == "data.frame") {
+    return(flowFrame.Prune(flowDataFrameOrList, parameter, upperBound, lowerBound, fromTable))
+  }
   
+  
+  if(class(flowDataFrameOrList) == "list") {
+    flowList<-as.list(NULL)
+    for(i in 1:length(flowDataFrameOrList)) {
+      flowList[[i]]<-flowFrame.Prune(flowDataFrameOrList[[i]], parameter, upperBound, lowerBound, fromTable)
+      names(flowList)[[i]]<-names(flowDataFrameOrList)[[i]]
+    }
+    return(flowList)
+  }
 }
