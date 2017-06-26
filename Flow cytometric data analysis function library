@@ -25,6 +25,7 @@ get.FCS<-function(fileName, filePath) {
     for (i in 1:length(fileNames)) {
       flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
       flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+      names(flowFrameList)[[i]]<-gsub(".fcs","",fileNames[[i]])
     }
   }
   
@@ -51,6 +52,7 @@ get.FCS<-function(fileName, filePath) {
     for (i in 1:length(fileNames)) {
       flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
       flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
+      names(flowFrameList)[[i]]<-gsub(".fcs","",fileNames[[i]])
     }
     
     setwd(currentWD)
@@ -186,7 +188,7 @@ flowFrame.MarkerApply<- function(flowDataFrame, keepFluoro = FALSE, sepChar = "-
       }
       
       if(Switch == FALSE) {
-        stop(paste("Could not assign", flow_column_name, "to a marker, check parameter table"))
+        warning(paste("Unable to assign", flow_column_name, "to a marker, check parameter table"))
       }
       
     } 
