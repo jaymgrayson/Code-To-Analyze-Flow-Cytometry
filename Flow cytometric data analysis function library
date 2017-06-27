@@ -443,9 +443,19 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
   
   if(class(flowObj) == "list") {
     flowList<-as.list(NULL)
+    length(flowList)<-length(flowObj)
+    
     for(i in 1:length(flowObj)) {
-      flowList[[i]]<-flowFrame.Prune(flowObj[[i]], parameter, upperBound, lowerBound, fromTable)
-      names(flowList)[[i]]<-names(flowObj)[[i]]
+      if(class(flowObj[[i]]) == "data.frame" ) {
+        flowList[[i]]<-flowFrame.Prune(flowObj[[i]], parameter, upperBound, lowerBound, fromTable)
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
+      if(class(flowObj[[i]]) == "flowFrame") {
+        flowList[[i]]<-as.data.frame(exprs(flowObj[[i]]))
+        flowList[[i]]<-flowFrame.Prune(flowList[[i]], parameter, upperBound, lowerBound, fromTable)
+        flowList[[i]]<-flowFrame(as.matrix(flowList[[i]]))
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
     }
     return(flowList)
   }
@@ -454,5 +464,135 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
     flowObj<-as.data.frame(exprs(flowObj))
     flowObj<-flowFrame.Prune(flowObj, parameter, upperBound, lowerBound, fromTable)
     return(flowFrame(as.matrix(flowObj)))
+  }
+}
+
+## Simplified and more flexible wrapper for the flowTrans() function
+## Perform various transformations on flow cytometry data
+## Arguments: 
+## flowObj -- a data frame, flowFrame, or a list containing these data types
+## transformation -- The transformation to be performed, case insensitive, quotations allowed but not required
+## ----- transformation options:
+## ----- arcsin OR arcsinh -- Multivariate Arc-Sinh transform
+## ----- box-cox OR boxcox -- Multivariate Box-Cox transform
+## ----- biexponential OR biexp -- Multivariate biexponential transform
+## ----- linlog OR lin-log -- Multivariate Lin-Log transform
+##
+## Biexp transform not currently working, inside or outside of wrapper
+flow.Transform<-function(flowObj, transformation) {
+  
+  ## Check for valid arguments
+  if(is.null(flowObj)){
+    stop("Invalid argument, NULL flow object")
+  }
+  
+  if(missing(transformation)){
+    stop("No transformation specified")
+  }
+  
+  ## Parse the kind of transformation the user would like to perform
+  transformation<-toupper(deparse(substitute(transformation)))
+  transformation<-gsub("\"", "", transformation)
+  
+  if(transformation == "ARCSIN" | transformation == "ARCSINH"){
+    transformation<-"mclMultivArcSinh"
+  }
+  
+  else if(transformation == "BOX-COX" | transformation == "BOXCOX"){
+    transformation<-"mclMultivBoxCox"
+  }
+  
+  else if(transformation == "BIEXPONENTIAL" | transformation == "BIEXP"){
+    transformation<-"mclMultivBiexp"
+  }
+  
+  else if(transformation == "LINLOG" | transformation == "LIN-LOG"){
+    transformation<-"mclMultivLinLog"
+  }
+  
+  else{
+    stop("Transformation not recognized")
+  }
+  
+  ## The actual transformation function, built on the flowTrans() function
+  flowFrame.Transform<-function(flowObj, transformation) {
+      flowFrameTrans<-flowTrans(dat=flowObj, fun=transformation, colnames(flowObj), n2f=FALSE, parameters.only = FALSE)
+      return(flowFrameTrans$result)
+  }
+  
+  ## How to call the flowTrans() function based on the type of data passed to flow.Transform()
+  if(class(flowObj) == "data.frame"){
+    asFlowFrame<-DFtoFF(flowObj)
+    flowResults<-flowFrame.Transform(asFlowFrame, transformation)
+    flowResults<-FFtoDF(flowResults)
+    return(flowResults)
+  }
+  
+  if(class(flowObj) == "flowFrame"){
+    return(flowFrame.Transform(flowObj, transformation))
+  }
+  
+  if(class(flowObj) == "list"){
+    flowList<-as.list(NULL)
+    length(flowList)<-length(flowObj)
+    
+    for(i in 1:length(flowObj)){
+      if(class(flowObj[[i]]) == "data.frame"){
+        asFlowFrame<-DFtoFF(flowObj[[i]])
+        flowResults<-flowFrame.Transform(asFlowFrame, transformation)
+        flowList[[i]]<-FFtoDF(flowResults)
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
+      
+      if(class(flowObj[[i]]) == "flowFrame"){
+        flowList[[i]]<-flowFrame.Transform(flowObj[[i]], transformation)
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
+    }
+    return(flowList)
+  }
+}
+
+## Converts a data frame or list of data frames to a flowFrame or list of flowFrames
+DFtoFF<-function(DF){
+  if(class(DF) == "data.frame"){
+    return(flowFrame(as.matrix(DF)))
+  }
+  if(class(DF) == "list"){
+    frameList<-as.list(NULL)
+    length(frameList)<-length(DF)
+    for(i in 1:length(DF)){
+      if(class(DF[[i]]) == "data.frame"){
+        frameList[[i]]<-flowFrame(as.matrix(DF[[i]]))
+        names(frameList)[[i]]<-names(DF)[[i]]
+      }
+      else{
+        warning(paste("Object at index",i,"not of type data.frame"))
+      }
+    }
+    return(frameList)
+  }
+}
+
+## Converts a flowFrame or list of flowFrames to a data frame or list of data frames
+FFtoDF<-function(FF){
+  
+  if(class(FF) == "flowFrame"){
+    return(as.data.frame(exprs(FF)))
+  }
+  
+  if(class(FF) == "list"){
+    frameList<-as.list(NULL)
+    length(frameList)<-length(FF)
+    for(i in 1:length(FF)){
+      if(class(FF[[i]]) == "flowFrame"){
+        frameList[[i]]<-as.data.frame(exprs(FF[[i]]))
+        names(frameList)[[i]]<-names(FF)[[i]]
+      }
+      else{
+        warning(paste("Object at index",i,"not of type flowFrame"))
+      }
+    }
+    return(frameList)
   }
 }
