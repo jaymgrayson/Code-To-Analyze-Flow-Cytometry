@@ -1,6 +1,29 @@
+## Function for installation of necessary packages (for fresh R installations)
+ImportPackages<- function(){
+  source("https://bioconductor.org/biocLite.R")
+  biocLite("flowCore")
+  biocLite("flowClust")
+  biocLite("flowViz")
+  biocLite("flowTrans")
+  
+  install.packages("ggplot2")
+  install.packages("tidyr")
+  install.packages("plyr")
+  install.packages("RColorBrewer")
+  install.packages("cluster")
+  install.packages("NbClust")
+  
+  if(!require(devtools)) install.packages("devtools")
+  devtools::install_github("kassambara/factoextra")
+}
+
 library(flowCore)
 library(flowClust)
+library(flowViz)
 library(flowTrans)
+library(factoextra)
+library(cluster)
+library(NbClust)
 
 ## Generic function for pulling in FCS files and returning a list of flow data frames
 ## Default behavior: Imports all FCS files found in the working directory
@@ -221,11 +244,13 @@ flow.MarkerApply<- function(flowObj, keepFluoro = FALSE, sepChar = "-") {
 ## Function to remove columns or specific elements that meet a condition from a flow object
 ## Arguments:
 ## flowObj - Data frame, list, or flowFrame containing flow data to be manipulated
-## parameter - String matching a column label of the flow frame
+## parameter - String or vector of strings matching a column label or set of labels in the flow frame
 ##
 ## Optional arguments:
 ## upper/lowerBound - Numeric(s) defining an allowed range of values for elements in flowDataFrame$parameter
-## If a value falls outside this range, the entire row (cell) is removed from the flow frame
+## If a value falls outside this range, the entire row (cell) is removed from the flow frame.
+## If upper/lower bounds are provided without accompanying parameters, then any values in the flow frame
+## outside of those bounds will be removed.
 ##
 ## fromTable - Boolean indicating whether or not the function should look in the parameter table
 ## for upper/lower bound arguments. If true, ignores provided parameter, upperBound, and lowerBound
@@ -237,20 +262,164 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
   ## the data type the function is passed
   flowFrame.Prune<-function(flowDataFrame = flowObj, parameter, upperBound, lowerBound, fromTable) {
     
-  ## If fromTable argument is true, the parameter label matrix exists, it's not null, 
-  ## AND it has either an upperbound or lowerbound column..
-    if (fromTable) {
-      if(!exists("paramInfo")) {
-      stop("Parameter table not found-- call get.Parameters()")
-      }
-      if(is.null(paramInfo)) {
-      stop("Parameter table is null")
-      }
-      if(!"UPPERBOUND" %in% colnames(paramInfo) & !"LOWERBOUND" %in% colnames(paramInfo)){
-      stop("No upper or lowerbounds found in parameter table")
+    ## Function for handling pruning when the parent function is called without a parameter table
+    pruneIterateNoTable<-function(flowDataFrame, parameter, upperBound, lowerBound){
+      Switch<-FALSE
+      colNum<-ncol(flowDataFrame)
+      columnNames<-toupper(colnames(flowDataFrame))
+      
+      ## If a parameter argument was supplied...
+      if(!missing(parameter)){
+        
+        parameter<-toupper(parameter)
+        
+        ## If "parameter" has multiple elements and there are no upper or lower bounds, remove all
+        ## columns of the flow frame that have a matching label to any contained in "parameter"
+        if(length(parameter) > 1 & is.null(upperBound) & is.null(lowerBound)){
+          for(i in 1:length(parameter)){
+            for(colI in 1:colNum){
+              if(columnNames[colI] == parameter[i]){
+                flowDataFrame<-flowDataFrame[-colI]
+              }
+            }
+          }
+          return(flowDataFrame)
+        }
+        
+        for(n in 1:length(parameter)){
+          for(colI in 1:colNum) {
+          
+            ## If a match is found
+            if (columnNames[colI] == parameter[n]) {
+              
+              Switch<-TRUE
+              
+              ## and if no upper/lower bound arguments were supplied
+              if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
+                
+                ## remove that column 
+                flowDataFrame<-flowDataFrame[-colI]
+                break()
+              }
+              
+              else {
+                
+                rowCount<-nrow(flowDataFrame[colI])
+                colValues<-as.vector(flowDataFrame[,colI])
+                rowIndexVector<-NULL
+                
+                ## If an upperbound and lowerbound argument were passed
+                if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
+                  
+                  cond<-c(colValues > upperBound | colValues < lowerBound)
+                  
+                  ## For each element in that column of the flow frame
+                  for(rowI in 1:rowCount){
+                    
+                    ## if the element value is above the upper or below the lower bounds, 
+                    ## add the row index of that value (cell) to a vector
+                    if(cond[rowI]){
+                      rowIndexVector<-c(rowIndexVector, rowI)
+                    }
+                  }
+                  
+                  ## Remove the cells matching the row indices from the flow frame
+                  if(!is.null(rowIndexVector)) {
+                    flowDataFrame<-flowDataFrame[-rowIndexVector,]
+                    break()
+                  }
+                }
+                
+                else {
+                  
+                  if(is.null(upperBound) == FALSE) {
+                    
+                    cond<-c(colValues > upperBound)
+                    
+                    for(rowI in 1:rowCount){
+                      if(cond[rowI]){
+                        rowIndexVector<-c(rowIndexVector, rowI)
+                      }
+                    }
+                    if(!is.null(rowIndexVector)) {
+                      flowDataFrame<-flowDataFrame[-rowIndexVector,]
+                      break()
+                    }
+                  }
+                  
+                  if(is.null(lowerBound) == FALSE) {
+                    
+                    cond<-c(colValues < lowerBound)
+                    
+                    for(rowI in 1:rowCount){
+                      if(cond[rowI]){
+                        rowIndexVector<-c(rowIndexVector, rowI)
+                      }
+                    }
+                    if(!is.null(rowIndexVector)) {
+                      flowDataFrame<-flowDataFrame[-rowIndexVector,]
+                      break()
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
       
-      ## For each parameter in the table..
+      ## If a parameter argument was NOT supplied but upper or lower bound arguments WERE...
+      if(missing(parameter) & (!is.null(upperBound) | !is.null(lowerBound))){
+        
+        Switch<-TRUE
+        
+        for(colI in 1:colNum){
+          
+          colValues<-as.vector(flowDataFrame[,colI])
+          rowCount<-nrow(flowDataFrame)
+          rowIndexVector<-NULL
+          
+          if(!is.null(upperBound)){
+            condUpper<-c(colValues > upperBound)
+          }
+          if(!is.null(lowerBound)){
+            condLower<-c(colValues < lowerBound)
+          }
+          
+          for(rowI in 1:rowCount){
+            if(condUpper[rowI] | condLower[rowI]){
+              rowIndexVector<-c(rowIndexVector, rowI)
+            }
+          }
+          
+          if(!is.null(rowIndexVector)) {
+            flowDataFrame<-flowDataFrame[-rowIndexVector,]
+          }
+        }
+      }
+      
+      if (Switch == FALSE) {
+        stop(paste(as.character(parameter), "parameter not found"))
+      }
+      
+      return(flowDataFrame)
+    }
+    
+    ## If fromTable argument is true...
+    if (fromTable) {
+      
+      ## Sanity checks on the parameter table
+      if(!exists("paramInfo")) {
+        stop("Parameter table not found-- call get.Parameters()")
+      }
+      if(is.null(paramInfo)) {
+        stop("Parameter table is null")
+      }
+      if(!"UPPERBOUND" %in% colnames(paramInfo) & !"LOWERBOUND" %in% colnames(paramInfo)){
+        stop("No upper or lowerbounds found in parameter table")
+      }
+      
+      ## For each parameter in the table...
       for (i in 1:nrow(paramInfo)) {
         
         Switch<-FALSE
@@ -343,103 +512,18 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
         }
       }
     return(flowDataFrame)
-  }
-  
-    parameter<-toupper(parameter)
-  
-    ## Iterate through the column names of the passed flow frame, looking for "parameter"
-    Switch<-FALSE
-    colNum<-ncol(flowDataFrame)
-    columnNames<-toupper(colnames(flowDataFrame))
+    }
     
-    for(colI in 1:colNum) {
-      
-      ## If a match is found
-      if (columnNames[colI] == parameter) {
-        
-        Switch<-TRUE
-  
-        ## and if no upper/lower bound arguments were supplied
-        if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
-  
-          ## remove that column 
-          flowDataFrame<-flowDataFrame[-colI]
-          break()
-        }
-        
-        else {
-  
-          rowCount<-nrow(flowDataFrame[colI])
-          colValues<-as.vector(flowDataFrame[,colI])
-          rowIndexVector<-NULL
-          
-          ## If an upperbound and lowerbound argument were passed
-          if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
-            
-            cond<-c(colValues > upperBound | colValues < lowerBound)
-  
-            ## For each element in that column of the flow frame
-            for(rowI in 1:rowCount){
-              
-              ## if the element value is above the upper or below the lower bounds, 
-              ## add the row index of that value (cell) to a vector
-              if(cond[rowI]){
-                rowIndexVector<-c(rowIndexVector, rowI)
-              }
-            }
-            
-            ## Remove the cells matching the row indices from the flow frame
-            if(!is.null(rowIndexVector)) {
-              flowDataFrame<-flowDataFrame[-rowIndexVector,]
-              break()
-            }
-          }
-          
-          else {
-  
-            if(is.null(upperBound) == FALSE) {
-                
-                cond<-c(colValues > upperBound)
-                
-                for(rowI in 1:rowCount){
-                  if(cond[rowI]){
-                    rowIndexVector<-c(rowIndexVector, rowI)
-                  }
-                }
-                if(!is.null(rowIndexVector)) {
-                  flowDataFrame<-flowDataFrame[-rowIndexVector,]
-                  break()
-                }
-              }
-  
-            if(is.null(lowerBound) == FALSE) {
-              
-              cond<-c(colValues < lowerBound)
-              
-              for(rowI in 1:rowCount){
-                if(cond[rowI]){
-                  rowIndexVector<-c(rowIndexVector, rowI)
-                }
-              }
-              if(!is.null(rowIndexVector)) {
-                flowDataFrame<-flowDataFrame[-rowIndexVector,]
-                break()
-              }
-            }
-          }
-        }
+    ## If fromTable argument is false...
+    if (!fromTable){
+        return(flowDataFrame<-pruneIterateNoTable(flowDataFrame, parameter, upperBound, lowerBound))
       }
     }
-    if (Switch == FALSE) {
-      stop(paste(as.character(parameter), "parameter not found"))
-    }
-    return(flowDataFrame)
-  }
   
+  ## Data type manipulation for feeding into the flowFrame.Prune() function
   if(class(flowObj) == "data.frame") {
     return(flowFrame.Prune(flowObj, parameter, upperBound, lowerBound, fromTable))
   }
-  
   
   if(class(flowObj) == "list") {
     flowList<-as.list(NULL)
