@@ -678,15 +678,6 @@ flow.Transform<-function(flowObj, transformation) {
   }
 }
 
-flow.Clust<-function(flowObj, maxClustNum){
-  for(i in 2:maxClustNum){
-    km.res <- kmeans(flowObj, centers = i, nstart = 25)
-    ss <- silhouette(km.res$cluster, dist(flowObj))
-    sil[i] <- mean(ss[,3])
-  }
-  return(sil)
-}
-
 ## Converts a data frame or list of data frames to a flowFrame or list of flowFrames
 DFtoFF<-function(DF){
   if(class(DF) == "data.frame"){
