@@ -25,6 +25,8 @@ library(factoextra)
 library(cluster)
 library(NbClust)
 
+setwd("C:/Users/srsimpso/Dropbox/Critical backups/R/Testing data")
+
 ## Generic function for pulling in FCS files and returning a list of flow data frames
 ## Default behavior: Imports all FCS files found in the working directory
 ## Optional arguments:
@@ -309,7 +311,7 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
                 rowIndexVector<-NULL
                 
                 ## If an upperbound and lowerbound argument were passed
-                if(is.null(upperBound) == FALSE & is.null(lowerBound) == FALSE) {
+                if(!is.null(upperBound) & !is.null(lowerBound)) {
                   
                   cond<-c(colValues > upperBound | colValues < lowerBound)
                   
@@ -372,28 +374,67 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
       if(missing(parameter) & (!is.null(upperBound) | !is.null(lowerBound))){
         
         Switch<-TRUE
+        condUpper<-NULL
+        condLower<-NULL
+        bothConds<-FALSE
+        onlyUpper<-FALSE
+        onlyLower<-FALSE
+        
+        if(!is.null(upperBound) & !is.null(lowerBound)){
+          bothConds<-TRUE
+        }
+        if(!is.null(upperBound) & is.null(lowerBound)){
+          onlyUpper<-TRUE
+        }
+        if(is.null(upperBound) & !is.null(lowerBound)){
+          onlyLower<-TRUE
+        }
         
         for(colI in 1:colNum){
           
-          colValues<-as.vector(flowDataFrame[,colI])
-          rowCount<-nrow(flowDataFrame)
           rowIndexVector<-NULL
+          rowCount<-nrow(flowDataFrame)
           
-          if(!is.null(upperBound)){
+          ## Exit the function with an error message if no events fall within the range specified by
+          ## upper and or lower bounds
+          if(rowCount == 0){
+            stop("No events within specified bounds.")
+          }
+          
+          colValues<-as.vector(flowDataFrame[,colI])
+          
+          if(onlyUpper){
             condUpper<-c(colValues > upperBound)
-          }
-          if(!is.null(lowerBound)){
-            condLower<-c(colValues < lowerBound)
-          }
-          
-          for(rowI in 1:rowCount){
-            if(condUpper[rowI] | condLower[rowI]){
-              rowIndexVector<-c(rowIndexVector, rowI)
+            for(rowI in 1:rowCount){
+              if(condUpper[rowI]){
+                rowIndexVector<-c(rowIndexVector, rowI)
+              }
+            }
+            if(!is.null(rowIndexVector)) {
+              flowDataFrame<-flowDataFrame[-rowIndexVector,]
             }
           }
-          
-          if(!is.null(rowIndexVector)) {
-            flowDataFrame<-flowDataFrame[-rowIndexVector,]
+          else if(onlyLower){
+            condLower<-c(colValues < lowerBound)
+            for(rowI in 1:rowCount){
+              if(condLower[rowI]){
+                rowIndexVector<-c(rowIndexVector, rowI)
+              }
+            }
+            if(!is.null(rowIndexVector)) {
+              flowDataFrame<-flowDataFrame[-rowIndexVector,]
+            }
+          }
+          else if(bothConds){
+            cond<-c(colValues > upperBound | colValues < lowerBound)
+            for(rowI in 1:rowCount){
+              if(cond[rowI]){
+                rowIndexVector<-c(rowIndexVector, rowI)
+              }
+            }
+            if(!is.null(rowIndexVector)) {
+              flowDataFrame<-flowDataFrame[-rowIndexVector,]
+            }
           }
         }
       }
@@ -635,6 +676,15 @@ flow.Transform<-function(flowObj, transformation) {
     }
     return(flowList)
   }
+}
+
+flow.Clust<-function(flowObj, maxClustNum){
+  for(i in 2:maxClustNum){
+    km.res <- kmeans(flowObj, centers = i, nstart = 25)
+    ss <- silhouette(km.res$cluster, dist(flowObj))
+    sil[i] <- mean(ss[,3])
+  }
+  return(sil)
 }
 
 ## Converts a data frame or list of data frames to a flowFrame or list of flowFrames
