@@ -5,6 +5,8 @@ ImportPackages<- function(){
   biocLite("flowClust")
   biocLite("flowViz")
   biocLite("flowTrans")
+  biocLite("ggcyto")
+  biocLite("flowWorkspace")
   
   install.packages("ggplot2")
   install.packages("tidyr")
@@ -12,6 +14,7 @@ ImportPackages<- function(){
   install.packages("RColorBrewer")
   install.packages("cluster")
   install.packages("NbClust")
+  install.packages("dplyr")
   
   if(!require(devtools)) install.packages("devtools")
   devtools::install_github("kassambara/factoextra")
@@ -24,83 +27,77 @@ library(flowTrans)
 library(factoextra)
 library(cluster)
 library(NbClust)
+library(ggcyto)
+library(flowWorkspace)
+library(dplyr)
 
-setwd("C:/Users/srsimpso/Dropbox/Critical backups/R/Testing data")
-
-## Generic function for pulling in FCS files and returning a list of flow data frames
+## Generic function for pulling in FCS files and returning a list of flow frames
+## Names each element of the list using the associated filename, -".fcs"
 ## Default behavior: Imports all FCS files found in the working directory
 ## Optional arguments:
-## File name - Will only import a single file that matches the provided string
-## File path - Will import files from the file path designated by the provided string
-get.FCS<-function(fileName, filePath) {
+## fileName - Will only import the file(s) that match the pattern provided by fileName 
+## path - Will import files from the designated file path
+## asDF - If true, converts all incoming flowFrame objects to data frames, dropping metadata
+get.FCS<-function(fileName, path, asDF = FALSE) {
   
   flowFrameList<-list()
+  currentWD<-getwd()
   
-  if(missing(filePath) == TRUE){
-    if (missing(fileName) == TRUE) {
+  if(missing(path)){
+    
+    if (missing(fileName)) {
       fileNames<-list.files(pattern = ".fcs$", ignore.case = TRUE)
     }
+    
     else {
       fileNames<-list.files(pattern = fileName)
       if (length(fileNames) == 0L) {
         stop(paste("File name not found in", getwd()))
       }
     }
-    
-    for (i in 1:length(fileNames)) {
-      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
-      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
-      names(flowFrameList)[[i]]<-gsub(".fcs","",fileNames[[i]])
-    }
   }
   
   else {
-    if (missing(fileName) == TRUE) {
-      fileNames<-list.files(path = filePath, pattern = ".fcs$", ignore.case = TRUE)
+    if (missing(fileName)) {
+      fileNames<-list.files(path = path, pattern = ".fcs$", ignore.case = TRUE)
       if (length(fileNames) == 0L) {
         stop(paste("File name not found in", filePath))
       }
     }
     else {
-      fileNames<-list.files(path = filePath, pattern = fileName)
+      fileNames<-list.files(path = path, pattern = fileName)
       if (length(fileNames) == 0L) {
         stop("File name not found, or unable to path correctly")
       }
     }
     
-    currentWD<-getwd()
-    setwd(filePath)
+    setwd(path)
     if (getwd() == currentWD) {
       stop("Unable to path correctly")
     }
-    
-    for (i in 1:length(fileNames)) {
-      flowFrameList[[i]]<-read.FCS(fileNames[[i]],transformation = FALSE)
-      flowFrameList[[i]]<-as.data.frame(exprs(flowFrameList[[i]]))
-      names(flowFrameList)[[i]]<-gsub(".fcs","",fileNames[[i]])
-    }
-    
-    setwd(currentWD)
   }
   
-  ## Parse column names of all incoming FCS files to a standardized,
-  ## no punctuation format
+  for (i in 1:length(fileNames)) {
+    flowFrameList[[i]]<-read.FCS(fileNames[i], transformation = FALSE)
+  }
+    
+  setwd(currentWD)
+  
+  if(asDF){
+    flowFrameList<-FFtoDF(flowFrameList)
+  }
+    
+  names(flowFrameList)<-gsub(".fcs","", fileNames)
+
+  # Parse column names of all incoming FCS files to a standardized,
+  # no punctuation format
   for(i in 1:length(flowFrameList)) {
-    
-    colNum<-ncol(flowFrameList[[i]])
-    
-    for (k in 1:colNum) {
-      
-      flowColumnName<-colnames(flowFrameList[[i]][k])
-      
-      flowColumnName<-sub("^<","",flowColumnName)
-      flowColumnName<-sub("-(A|A>)","",flowColumnName)
-      flowColumnName<-gsub("[^[:alnum:]]", "", flowColumnName)
-      flowColumnName<-toupper(flowColumnName)
-      colnames(flowFrameList[[i]])[k]<-flowColumnName
-      
-    }
-    
+      flowColumnNames<-colnames(flowFrameList[[i]])
+      flowColumnNames<-sub("^<","",flowColumnNames)
+      flowColumnNames<-sub("-(A|A>)","",flowColumnNames)
+      flowColumnNames<-gsub("[^[:alnum:]]", "", flowColumnNames)
+      flowColumnNames<-toupper(flowColumnNames)
+      colnames(flowFrameList[[i]])<-flowColumnNames
   }
   
   return(flowFrameList)
@@ -126,8 +123,16 @@ get.FCS<-function(fileName, filePath) {
 ##
 ## This function creates a parameter information matrix titled "paramInfo" in the global environment, 
 ## rather than returning the matrix. This allows other functions to access it without having
-## to reference it as an argument
+## to reference the filename of the table as an argument
 get.Parameters<-function(parameterTableFileName) {
+  
+  if(missing(parameterTableFileName)){
+    stop("Parameter table file name missing")
+  }
+  
+  if(length(list.files(pattern = parameterTableFileName)) == 0){
+    stop("Could not find parameter table in current working directory")
+  }
   
   parameters<-as.data.frame(read.table(parameterTableFileName, header = TRUE, stringsAsFactors = FALSE, na.strings = "NA", fill = TRUE))
  
@@ -145,6 +150,9 @@ get.Parameters<-function(parameterTableFileName) {
     parameters$MARKER[i]<-toupper(parameters$MARKER[i])
   }
 
+  ## Rename the rows to the fluorophore labels and drop the fluorophore column
+  rownames(parameters)<-parameters$FLUOROPHORE
+  parameters<-parameters[,-1]
   
   assign("paramInfo", parameters, envir = globalenv())
 }
@@ -177,38 +185,37 @@ flow.MarkerApply<- function(flowObj, keepFluoro = FALSE, sepChar = "-") {
       flow_column_name<-colnames(flowDataFrame[i])  
       
       ## If column name = FSC, SSC, or Time, skip it
-      if(flow_column_name == "FSC" | flow_column_name == "SSC" | flow_column_name == "TIME") {
+      paramsToIgnore<-c("FSC", "FSCH", "SSC", "SSCH", "TIME")
+      if(flow_column_name %in% paramsToIgnore) {
         next()
       }
       
       else {
         
-        ## Iteratively compare the column name to the fluorescence parameters in the 
+        ## Compare the column name to the fluorescence parameters in the 
         ## provided label file
         ##
         ## If matched, rename the column of the flow data frame to marker label
         
         Switch<-FALSE
         
-        for(n in 1:length(paramInfo$FLUOROPHORE)){
+        if(flow_column_name %in% rownames(paramInfo)){
           
-          if(flow_column_name == paramInfo$FLUOROPHORE[n]) {
-  
-            if(keepFluoro == FALSE) {
-              colnames(flowDataFrame)[i]<-as.character(paramInfo$MARKER[n])
+          
+          if(keepFluoro){
+            if(sepChar == "-") {
+              colnames(flowDataFrame)[i]<-paste(paramInfo[flow_column_name,1], flow_column_name, sep = "-")
+              Switch<-TRUE
+            }
+            else {
+              colnames(flowDataFrame)[i]<-paste(paramInfo[flow_column_name,1], flow_column_name, sep = sepChar)
               Switch<-TRUE
             }
             
-            if(keepFluoro == TRUE){
-              if(sepChar == "-") {
-                colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = "-")
-                Switch<-TRUE
-              }
-              else {
-                colnames(flowDataFrame)[i]<-paste(as.character(paramInfo$MARKER[n]), flow_column_name, sep = sepChar)
-                Switch<-TRUE
-              }
-            }
+          }
+          if(!keepFluoro) {
+            colnames(flowDataFrame)[i]<-paramInfo[flow_column_name,1]
+            Switch<-TRUE
           }
         }
         
@@ -229,16 +236,24 @@ flow.MarkerApply<- function(flowObj, keepFluoro = FALSE, sepChar = "-") {
   if(class(flowObj) == "list") {
     flowList<-as.list(NULL)
     for(i in 1:length(flowObj)) {
-      flowList[[i]]<-flowFrame.MarkerApply(flowObj[[i]], keepFluoro, sepChar)
-      names(flowList)[[i]]<-names(flowObj)[[i]]
+      if(class(flowObj[[i]]) == "data.frame"){
+        flowList[[i]]<-flowFrame.MarkerApply(flowObj[[i]], keepFluoro, sepChar)
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
+      if(class(flowObj[[i]]) == "flowFrame"){
+        flowList[[i]]<-FFtoDF(flowObj[[i]])
+        flowList[[i]]<-flowFrame.MarkerApply(flowList[[i]], keepFluoro, sepChar)
+        flowList[[i]]<-DFtoFF(flowList[[i]])
+        names(flowList)[[i]]<-names(flowObj)[[i]]
+      }
     }
     return(flowList)
   }
   
   if(class(flowObj) == "flowFrame") {
-    flowObj<-as.data.frame(exprs(flowObj))
+    flowObj<-FFtoDF(flowObj)
     flowObj<-flowFrame.MarkerApply(flowObj, keepFluoro, sepChar)
-    return(flowFrame(as.matrix(flowObj)))
+    return(DFtoFF(flowObj))
   }
   
 }
@@ -281,9 +296,10 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
           for(i in 1:length(parameter)){
             for(colI in 1:colNum){
               if(columnNames[colI] == parameter[i]){
-                flowDataFrame<-flowDataFrame[-colI]
+                columnsToDelete<-c(columnNames[colI])
               }
             }
+            flowDataFrame<-flowDataFrame[, !names(flowDataFrame) %in% columnsToDelete]
           }
           return(flowDataFrame)
         }
@@ -297,7 +313,7 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
               Switch<-TRUE
               
               ## and if no upper/lower bound arguments were supplied
-              if(is.null(upperBound) == TRUE & is.null(lowerBound) == TRUE) {
+              if(is.null(upperBound)& is.null(lowerBound)) {
                 
                 ## remove that column 
                 flowDataFrame<-flowDataFrame[-colI]
@@ -468,7 +484,7 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
         ## Iterate through each column of the flow data frame..
         for (k in 1:ncol(flowDataFrame)) {
           
-          fluoroLabel<-paramInfo$FLUOROPHORE[i]
+          fluoroLabel<-rownames(paramInfo[i,])
           markerLabel<-paramInfo$MARKER[i]
           Upper<-paramInfo$UPPERBOUND[i]
           Lower<-paramInfo$LOWERBOUND[i]
@@ -545,10 +561,10 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
         }
         if (Switch == FALSE) {
           if (!is.na(paramInfo$MARKER[i])){
-            warning(paste("Unable to find",paramInfo$MARKER[i],"or",paramInfo$FLUOROPHORE[i],"in flow frame"))
+            warning(paste("Unable to find",paramInfo$MARKER[i],"or",rownames(paramInfo[i,]),"in flow frame"))
           }
           else {
-            warning(paste("Unable to find",paramInfo$FLUOROPHORE[i],"in flow frame"))
+            warning(paste("Unable to find",rownames(paramInfo[i,]),"in flow frame"))
           }
         }
       }
@@ -576,9 +592,9 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
         names(flowList)[[i]]<-names(flowObj)[[i]]
       }
       if(class(flowObj[[i]]) == "flowFrame") {
-        flowList[[i]]<-as.data.frame(exprs(flowObj[[i]]))
+        flowList[[i]]<-FFtoDF(flowList[[i]])
         flowList[[i]]<-flowFrame.Prune(flowList[[i]], parameter, upperBound, lowerBound, fromTable)
-        flowList[[i]]<-flowFrame(as.matrix(flowList[[i]]))
+        flowList[[i]]<-DFtoFF(flowList[[i]])
         names(flowList)[[i]]<-names(flowObj)[[i]]
       }
     }
@@ -586,9 +602,9 @@ flow.Prune<-function(flowObj, parameter, upperBound = NULL, lowerBound = NULL, f
   }
   
   if(class(flowObj) == "flowFrame") {
-    flowObj<-as.data.frame(exprs(flowObj))
+    flowObj<-FFtoDF(flowObj)
     flowObj<-flowFrame.Prune(flowObj, parameter, upperBound, lowerBound, fromTable)
-    return(flowFrame(as.matrix(flowObj)))
+    return(DFtoFF(flowObj))
   }
 }
 
@@ -723,6 +739,29 @@ flow.Subset<-function(flowObj, subsetPercent){
   
 }
 
+## Right now, just data type manipulation for ggcyto's implementation of plot(flowFrame)
+## In the future, smarter and simpler visualization of flow data
+flow.Plot<-function(flowObj, dimVector) {
+  
+  flowPlot<-function(flowFrame, dimVector) {
+    return(plot(flowFrame, dimVector))
+  }
+  
+  if(class(flowObj) == "flowFrame"){
+    return(flowPlot(flowObj, dimVector))
+  }
+  
+  if(class(flowObj) == "data.frame"){
+    flowObj<-DFtoFF(flowObj)
+    return(flowPlot(flowObj, dimVector))
+  }
+  
+  else {
+    stop(paste("Object of type", class(flowObj), "not supported"))
+  }
+  
+}
+
 ## Converts a data frame or list of data frames to a flowFrame or list of flowFrames
 DFtoFF<-function(DF){
   if(class(DF) == "data.frame"){
@@ -742,6 +781,10 @@ DFtoFF<-function(DF){
     }
     return(frameList)
   }
+  else {
+    stop(" Object is not of type data.frame")
+  }
+  
 }
 
 ## Converts a flowFrame or list of flowFrames to a data frame or list of data frames
@@ -764,5 +807,8 @@ FFtoDF<-function(FF){
       }
     }
     return(frameList)
+  }
+  else {
+    stop("Object is not of type flowFrame")
   }
 }
